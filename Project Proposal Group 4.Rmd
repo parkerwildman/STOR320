@@ -12,7 +12,7 @@ library(tidyverse)
 
 # Project Roles
 
--   **Creator:** Dylan Fastenburg
+-   **Creator:** Dylan Fastenberg
 -   **Interpreter 1:** Josh Paulson 
 -   **Interpreter 2:** Jane Broga
 -   **Orator 1:** Brady Rassin
