@@ -1,0 +1,309 @@
+---
+title: "Exploratory Data Analysis"
+author: "STOR 320.02 Group 4"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(ggplot2)
+library(ggplot2)
+library(dplyr)
+library(moments)
+library(readr)
+library(patchwork)
+
+# Import Data Below
+spotify <- read_csv('/Users/parkerwildman/Downloads/Final Project/spotify_songs.csv', show_col_types = FALSE)
+
+```
+
+# Creator: Dylan Fastenberg
+
+### Q1: What is the distribution of danceability, energy, valence, and loudness?
+
+```{r, warning = F}
+features <- c("danceability", "energy", "valence", "loudness")
+for (feature in features){
+  p <- ggplot(spotify, aes(x = .data[[feature]])) +
+    geom_histogram(aes(y = ..density..), bins = 30, fill = "blue", alpha = 0.5) +
+    geom_density(color = "red", size = 1) +
+    labs(title = paste("Distribution of", feature), x = feature, y = "Density") +
+    theme_minimal()
+  print(p)  
+  
+  feature_skew <- skewness(spotify[[feature]], na.rm = TRUE)
+  feature_kurt <- kurtosis(spotify[[feature]], na.rm = TRUE)
+  cat(paste("\n", feature, " - Skewness:", round(feature_skew, 3), 
+            ", Kurtosis:", round(feature_kurt, 3), "\n"))
+}
+
+```
+
+### Q2: Within certain keys, do energy and danceability vary? (Do some keys translate to slower, sadder, and less danceable songs as opposed to hapier and more fast-paced ones)?
+
+```{r}
+music_data_filtered <- spotify %>%
+  filter(key >= 0)
+p1 <- ggplot(music_data_filtered, aes(x = factor(key), y = energy)) +
+  geom_boxplot(fill = "blue", alpha = 0.5) +
+  labs(title = "Energy Variation by Key", x = "Key", y = "Energy") +
+  theme_minimal()
+print(p1)
+p2 <- ggplot(music_data_filtered, aes(x = factor(key), y = danceability)) +
+  geom_boxplot(fill = "green", alpha = 0.5) +
+  labs(title = "Danceability Variation by Key", x = "Key", y = "Danceability") +
+  theme_minimal()
+print(p2)
+
+```
+
+# Interpreter 1: Josh Paulsen
+
+### Q1: Are there major differences in music between the 2000s and the 2010s?
+
+```{r}
+#extracting release year/decade
+spotify$track_album_release_date <- as.Date(spotify$track_album_release_date, format="%Y-%m-%d")
+spotify$release_year <- as.numeric(format(spotify$track_album_release_date, "%Y"))
+spotify$release_decade <- floor(spotify$release_year / 10) * 10
+spotify_decades <- subset(spotify, release_decade %in% c(2000, 2010))
+#quick summary stats across many relevant metrics
+summary_stats <- spotify_decades %>%
+  group_by(release_decade) %>%
+  summarize(
+    mean_danceability = mean(danceability, na.rm = TRUE),
+    mean_energy = mean(energy, na.rm = TRUE),
+    mean_loudness = mean(loudness, na.rm = TRUE),
+    mean_tempo = mean(tempo, na.rm = TRUE),
+    mean_valence = mean(valence, na.rm = TRUE),
+    mean_instrumentalness = mean(instrumentalness, na.rm = TRUE),
+    mean_speechiness = mean(speechiness, na.rm = TRUE),
+    mean_acousticness = mean(acousticness, na.rm = TRUE)
+  )
+#need to gather because the decades were grouped together
+summary_stats_long <- summary_stats %>%
+  gather(key = "metric", value = "value", -release_decade)
+#visualization of the differences
+ggplot(summary_stats_long, aes(x = as.factor(release_decade), y = value, fill = metric)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  facet_wrap(~metric, scales = "free_y")
+
+```
+
+### Q2: Is there a relationship between the length of a song and its popularity?
+
+```{r}
+# convert to minutes because no one looks at duration in ms
+spotify$duration_min <- spotify$duration_ms / 60000
+
+# visualization of the relationship
+ggplot(spotify, aes(x = duration_min, y = track_popularity)) +
+  geom_point() +
+  geom_smooth(method = "lm")
+
+```
+
+# Interpreter 2: Jane Broga
+
+### Q1: How does the popularity of different genres vary over time?
+
+```{r, warning = F}
+spotify$track_album_release_date <- as.Date(spotify$track_album_release_date, format="%Y-%m-%d")
+spotify$release_year <- as.numeric(format(spotify$track_album_release_date, "%Y"))
+
+ggplot(spotify, aes(x = release_year, y = track_popularity, color = playlist_genre)) + geom_point(size = 0.3) + labs(title = "Popularity of Genres through the Years", x = "Release Year", y = "Track Popularity") + geom_smooth(method = "lm", color = "black", size = 0.3) + facet_wrap(~playlist_genre)
+
+```
+
+### Q2: How does valence correlate with speechiness?
+
+```{r}
+ggplot(spotify, aes(x = valence, y = speechiness)) + geom_point() + geom_smooth(method = "lm") +
+  labs(title = "Relationship between Speechiness and Valence")
+cor.test(spotify$valence, spotify$speechiness, method = "pearson") 
+
+```
+
+# Orator 1: Dylan Krakker
+
+### Q1: How does the popularity of certain artists change over time (looking at older and newer artists)?
+
+```{r, warning = F}
+selected_artists1 <- c("Drake", "Queen", "Ed Sheeran", "Green Day")
+artist_songs <- spotify %>%
+  filter(track_artist %in% selected_artists1)
+artist_songs$year <- as.numeric(substr(artist_songs$track_album_release_date, 1, 4))
+ggplot(artist_songs, aes(x = year, y = track_popularity, color = track_artist)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "lm", se = FALSE) 
+
+```
+
+### Q2: Does popularity differ between months for artist releases?
+
+```{r}
+selected_artists <- c("Drake", "Queen", "Ed Sheeran", "Billie Eilish")
+artist_songs <- spotify %>%
+  filter(track_artist %in% selected_artists) |>
+  separate(track_album_release_date, c("Year", "month", "day", "-"), fill = "right")
+ggplot(artist_songs, aes(x = month, y = track_popularity, fill = month)) +
+  geom_boxplot() +
+  facet_wrap(~ track_artist) +
+  theme_minimal()
+```
+
+# Orator 2: Brady Rassin
+
+### Q1: How do audio features (energy, danceability, acoustics, etc.) differ between genres?
+
+```{r, warning = F}
+name_feature <- names(spotify)[12:23]
+  
+genre_features <- spotify %>%
+  select(playlist_genre,name_feature) %>%
+  gather(key= "feature", value = "Value",all_of(name_feature))
+  
+genre_plot <- ggplot(genre_features, aes(x=Value,color=playlist_genre)) + 
+  geom_freqpoly(bins=50) +
+  facet_wrap(~feature, scales="free", ncol=3) +
+  labs(title="Spotify Features by Genre") +
+  theme(axis.text.y=element_blank(), axis.title=element_blank())
+
+ggsave("genre.features.plot.pdf",genre_plot,width=12,height=8)
+genre_plot
+
+```
+
+### Q2: What variables would be significant in a linear regression model trying to predict song popularity
+
+```{r, warning = F}
+lm_model_data <- spotify %>%
+  select(-(1:3),-(5:11))
+
+lm_model <- lm(track_popularity~.,data=lm_model_data)
+
+summary(lm_model)
+
+lm_predictions <- predict(lm_model,newdata=lm_model_data)
+
+ggplot(data=lm_model_data,aes(x=track_popularity,y=lm_predictions)) + geom_point() + 
+  geom_abline(slope=1,intercept=0,color="red",linetype="dashed") +
+  labs(title="Average vs. Predicted Popularity", x="Actual Popularity",
+       y="Predicted Popularity") + coord_cartesian(ylim=c(0,100))
+
+```
+
+# Deliverer: Parker Wildman
+
+### Q1: What is the relationship between the number of releases and the average track popularity over the years?
+
+```{r}
+clean.1 <- spotify |>
+  rename(`Song Name` = "track_name", "Artist" = "track_artist", "Popularity" = "track_popularity", `Album ID` = "track_album_id", `Album Name` = "track_album_name", `Album Release Date` = "track_album_release_date") |>
+  separate(`Album Release Date`, c("Year", "Month", "Day"), "-", fill = "right", convert = T)
+grouped.1 <- clean.1 |>
+  group_by(Artist) |>
+  summarize(mean_popularity = mean(Popularity), n = n()) |>
+  sort_by(~n)
+ggplot(grouped.1, mapping = aes(x = n, y = mean_popularity)) +
+  geom_point()+
+  geom_smooth(method = lm, se = F)
+```
+
+### Q2: Which artists are most frequently featured in collaborative tracks?
+
+```{r, warning=FALSE}
+feats <- clean.1 |>
+  filter(grepl("feat", `Song Name`)) |>
+  separate(`Song Name`, c("Song", "Feature"), sep = "feat.") |>
+  separate("Feature", c("Feature", "extra"), "[)]", fill = "right") 
+
+withs <- clean.1 |>
+  filter(grepl("with", `Song Name`)) |>
+  separate(`Song Name`,c("Song", "Feature"), "with") |>
+  separate("Feature" , c("Feature", "Extra"), sep = "[)]", fill = "right") 
+  
+all_feats <- bind_rows(feats, withs) 
+all_feats <- all_feats |>
+  group_by(Feature) |>
+  mutate(count = n()) |>
+  arrange(desc(count)) |>
+  filter(count>=10) #14 is the median of count 
+ggplot(all_feats, mapping=aes(x = Feature)) + 
+  geom_bar(mapping = aes(fill = Feature)) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1), legend.position = "none")
+```
+
+# Follow-up Questions
+
+### New Questions Based Off Initial Investigation
+
+- Q1: Are there certain qualities that define if a song is in a genre? For example, EDM has a sharp peak at a certain area of tempo that no other genre has.
+- Q2: Is popularity in track genre consistent over time or are some getting more/less popular over time?
+- Q3: Why did instrumentals and valence experience such drastic changes between the 2000s and 2010s? Is this due to certain genres emerging/fading? 
+- Q4: Can we predict the best time of year for certain genres to release music?
+
+### Investigation of Follow-up Questions
+
+Our group decided to investigate Q1 and Q4 in further detail.
+
+```{r}
+song_features <- spotify %>%
+  select(playlist_genre,all_of(name_feature))
+
+tempo_boxplot <- ggplot(song_features,aes(x=playlist_genre,y=tempo,fill=playlist_genre)) + 
+  geom_boxplot() + labs(title="Tempo by Genre", x="Genre", y="Tempo [BPM]") + theme(legend.position = "none")
+tempo_boxplot
+
+energy_boxplot <- ggplot(song_features,aes(x=playlist_genre,y=energy,fill=playlist_genre)) +
+  geom_boxplot() + labs(title=element_blank(), x="Genre", y="Energy") + theme(legend.position = "none")
+
+valence_boxplot <- ggplot(song_features,aes(x=playlist_genre,y=valence,fill=playlist_genre)) + 
+  geom_boxplot() + labs(title=element_blank(),x="Genre",y="Valence") + theme(legend.position = "none")
+
+library(patchwork)
+combined_plot <- tempo_boxplot / energy_boxplot / valence_boxplot
+combined_plot
+
+ggsave("Genre_Features_Plot.png",combined_plot,height=10)
+
+```
+
+```{r, warning = F}
+monthly_genre_popularity <- spotify %>%
+  separate(track_album_release_date, c("year", "month", "day"), "-", fill = "right", convert = T) %>%
+  group_by(playlist_genre, month) %>%
+  summarise(avg_popularity = mean(track_popularity, na.rm = TRUE))
+
+ggplot(monthly_genre_popularity, aes(x = month, y = avg_popularity, group = playlist_genre, color = playlist_genre)) +
+  geom_line(size = .5) +
+  geom_point(size = 1) +
+  labs(title = "AVG Popularity by Month", x = "Month", y = "Popularity", color = "Genre") +
+  theme_minimal()
+
+```
+
+# Summary
+
+Our investigation helped us explore various features influencing song popularity and how genres have evolved. We found that none of the distributions for danceability, energy, valence, or loudness were normal. Valence came the closest but looked possibly bimodal. When examining energy and danceability distributions by key, we only small variations between the keys. Comparing audio features between the 2000s and 2010s, we found little change across most variables, except for a significant rise in instrumentalness and slight shifts in acoustics and valence. This led us to consider further investigations into what caused these shifts. We also found a weak negative correlation between song duration and popularity, but we expected the correlation to be stronger. Genre trends over time revealed shifts that we had not previously expected, with rock maintaining consistent popularity, while EDM emerged as a dominant genre in the mid-2000s and beyond. This also led us to further questions, looking into the popularity of specific tracks within each genre and their popularity over time. Despite initial assumptions, speechiness and valence showed no significant correlation, so there seemed to be no relationship between the happiness of a song and the word ratio. Analyzing individual artist popularity, we found Drake and Ed Sheeran surged in the 2010s, while Green Day declined after the 2000s, and Queen maintained steady popularity with occasional peaks. Seasonal release trends varied across artists—Drake and Billie Eilish saw strong performances in November, while Ed Sheeran’s most popular releases were in the summer months. Examining audio features by genre, we observed a significant tempo spike around 125 BPM for EDM, which may have distorted overall genre comparisons. EDM also exhibited higher energy and lower valence than other genres, which seemed slightly contradicting. This led us to want to further investigate the features that may predict what genre a song is placed into. Our attempt to predict song popularity using regression analysis failed to accurately model popularity trends, highlighting the role of external factors in predicting popularity. We then looked at the relationship between the number of releases and average popularity. Our findings show that when artists have more releases their popularity tends to hover around 50 as the averages of different releases level each other out. Overall, we found that popularity trends differ significantly by genre and era. The first release of a genre plays a role in shaping its popularity over the years. While we anticipated a negative correlation between track length and popularity, we expected it to be much stronger. Some issues we ran into when exploring the featured artists were that many artists would be the same person, but they would have very slight differences in spelling, so when we grouped the data some of the counts were skewed. We needed further exploration to determine how much this may skew the data and Our initial questions, how audio features differ across genres, how genre popularity changes over time, how music has evolved between decades, and whether release month impacts success, allowed us to explore more specific questions about our Spotify dataset.
+
+
+PARAGRAPH 2 SHOULD SUMMARIZE WHAT YOU LEARNED FROM INVESTIGATING THE FOLLOW-UP QUESTIONS. WHY ARE THESE FOLLOW-UP QUESTIONS INTERESTING FOR INVESTIGATION? DESCRIBE THE TABLES/FIGURES YOU USED TO EXPLORE ANSWERS TO THESE FOLLOW-UP QUESTIONS? WHAT DID YOU LEARN FROM THE TABLES/FIGURES REGARDING THE FOLLOW-UP QUESTIONS YOU PROPOSED?
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
